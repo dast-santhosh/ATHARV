@@ -47,21 +47,25 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
     }
   }, [synth]);
 
-  // Voice Selection: Prioritize Male Indian voices for Atharv
+  // Voice Selection: Prioritize Male voices for Atharv
   const getInstructorVoice = () => {
-    // 1. Specific Indian Male voices
+    // 1. Specific Indian Male voices (Best for Atharv)
     const indianMale = voices.find(v => (v.lang === 'hi-IN' || v.lang === 'en-IN') && v.name.includes('Male'));
     if (indianMale) return indianMale;
 
-    // 2. Fallback: Any Hindi Voice (often better accent)
-    const hindiVoice = voices.find(v => v.lang === 'hi-IN');
-    if (hindiVoice) return hindiVoice;
+    // 2. Any English Male Voice (Global fallback to ensure male gender)
+    const globalMale = voices.find(v => v.name.includes('Male') && v.lang.startsWith('en'));
+    if (globalMale) return globalMale;
 
-    // 3. Fallback: English India
+    // 3. Fallback: Any Male voice found anywhere
+    const anyMale = voices.find(v => v.name.includes('Male'));
+    if (anyMale) return anyMale;
+
+    // 4. Fallback: English India (Might be female, but correct accent)
     const indianEnglish = voices.find(v => v.lang === 'en-IN');
     if (indianEnglish) return indianEnglish;
 
-    // 4. Global Fallback
+    // 5. Global Fallback
     return voices[0];
   };
 
