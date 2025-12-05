@@ -80,6 +80,30 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
     }
   }, [lessonPlan]);
 
+  // --- SMART IMAGE PRELOADING ---
+  // This looks ahead 2 steps and triggers a hidden fetch for any images.
+  // By the time the user gets there, the image is cached.
+  useEffect(() => {
+    if (!lessonPlan) return;
+
+    const preloadImage = (index: number) => {
+        if (index >= lessonPlan.steps.length) return;
+        
+        const step = lessonPlan.steps[index];
+        // Check if it's an image step (Pollinations URL or Data URI)
+        if (step.visualType === 'image' || step.board.startsWith('http') || step.board.startsWith('data:')) {
+            const img = new Image();
+            img.src = step.board; // This forces the browser to download and cache the image
+            console.log(`Preloading image for step ${index + 1}`);
+        }
+    };
+
+    // Preload the next 2 steps immediately
+    preloadImage(currentStepIndex + 1);
+    preloadImage(currentStepIndex + 2);
+
+  }, [currentStepIndex, lessonPlan]);
+
   const resetImageTransforms = () => {
       setImgScale(1);
       setImgRotation(0);
@@ -187,7 +211,7 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
   // Determine if current content is an image
   const isImage = useMemo(() => {
       if (!currentStep) return false;
-      return currentStep.visualType === 'image' || currentStep.board.startsWith('data:');
+      return currentStep.visualType === 'image' || currentStep.board.startsWith('data:') || currentStep.board.startsWith('http');
   }, [currentStep]);
 
   // Content Parser
