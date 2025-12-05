@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LessonPlan } from './types';
 import { solveOnBlackboard } from './services/geminiService';
 import Blackboard from './components/Blackboard';
 import InputTab from './components/InputTab';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, Smartphone, RotateCcw } from 'lucide-react';
 
 const App: React.FC = () => {
   const [prompt, setPrompt] = useState('');
@@ -13,6 +13,28 @@ const App: React.FC = () => {
   const [lessonPlan, setLessonPlan] = useState<LessonPlan | null>(null);
   const [loading, setLoading] = useState(false);
   const [tabOpen, setTabOpen] = useState(true);
+
+  // Landscape Orientation Prompt State
+  const [showRotatePrompt, setShowRotatePrompt] = useState(false);
+
+  useEffect(() => {
+    const checkOrientation = () => {
+      // Logic: If width < 768px (Mobile) AND Height > Width (Portrait)
+      if (window.innerWidth < 768 && window.innerHeight > window.innerWidth) {
+        setShowRotatePrompt(true);
+      } else {
+        setShowRotatePrompt(false);
+      }
+    };
+
+    // Check initially
+    checkOrientation();
+    
+    // Add listener
+    window.addEventListener('resize', checkOrientation);
+    return () => window.removeEventListener('resize', checkOrientation);
+  }, []);
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,7 +55,7 @@ const App: React.FC = () => {
       console.error(error);
       setLessonPlan({
           steps: [
-              { board: "Error", spoken: "Sorry beta, kuch technical problem hai.", visualType: 'html' }
+              { board: "<h1>Connection Error</h1><p>Could not reach Atharv. Please try again.</p>", spoken: "Sorry students, I lost connection. Please ask again.", visualType: 'html' }
           ]
       });
     } finally {
@@ -44,60 +66,90 @@ const App: React.FC = () => {
   const handleClear = () => {
     setLessonPlan(null);
     setPrompt('');
-    window.speechSynthesis.cancel();
+    setTabOpen(true);
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-950 relative">
+    <div className="h-screen w-screen bg-slate-900 flex overflow-hidden font-sans select-none">
       
-      {/* Toggle Sidebar Button (Visible on Desktop too) */}
+      {/* MOBILE LANDSCAPE PROMPT OVERLAY */}
+      {showRotatePrompt && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/95 backdrop-blur-md flex flex-col items-center justify-center text-white text-center p-8 animate-in fade-in">
+            <RotateCcw size={64} className="mb-6 text-yellow-400 animate-spin-slow" />
+            <h2 className="text-3xl font-bold mb-4 text-yellow-400">Please Rotate Your Phone</h2>
+            <p className="text-lg text-slate-300 max-w-md mb-8">
+                Atharv's Blackboard works best in <b>Landscape Mode</b>. 
+                Please turn your device sideways for the full classroom experience.
+            </p>
+            <div className="flex gap-4">
+                 <div className="w-16 h-24 border-2 border-slate-600 rounded-lg flex items-center justify-center">
+                    <Smartphone size={24} className="text-slate-600" />
+                 </div>
+                 <div className="flex items-center text-yellow-400">
+                    →
+                 </div>
+                 <div className="w-24 h-16 border-2 border-yellow-400 rounded-lg flex items-center justify-center bg-yellow-400/10 shadow-[0_0_15px_rgba(250,204,21,0.3)]">
+                    <Smartphone size={24} className="text-yellow-400 rotate-90" />
+                 </div>
+            </div>
+            <button 
+                onClick={() => setShowRotatePrompt(false)}
+                className="mt-12 text-sm text-slate-500 underline hover:text-slate-300"
+            >
+                Dismiss (Use Portrait anyway)
+            </button>
+        </div>
+      )}
+
+      {/* SIDEBAR TOGGLE (Mobile & Desktop) */}
       <button 
         onClick={() => setTabOpen(!tabOpen)}
-        className="absolute top-4 left-4 z-50 bg-white text-slate-900 p-2 rounded-full shadow-lg hover:bg-yellow-100 transition-colors"
-        title={tabOpen ? "Close Sidebar" : "Open Sidebar"}
+        className={`fixed z-50 p-2 rounded-full shadow-lg transition-all duration-300 ${
+            tabOpen 
+            ? 'top-4 left-[280px] md:left-[360px] bg-slate-800 text-white' 
+            : 'top-4 left-4 bg-yellow-400 text-black'
+        }`}
       >
-        {tabOpen ? <X size={24} /> : <Menu size={24} />}
+        {tabOpen ? <X size={20} /> : <Menu size={20} />}
       </button>
 
-      {/* 
-        Layout Grid: 
-        Left Column: Input Tab (Collapsible)
-      */}
-      <div 
-        className={`
-          fixed md:relative z-40 h-full shadow-2xl flex-shrink-0 transition-all duration-300 ease-in-out overflow-hidden
-          ${tabOpen ? 'translate-x-0 w-80 md:w-96' : '-translate-x-full md:translate-x-0 w-0 md:w-0'}
-        `}
-      >
-        <div className="w-80 md:w-96 h-full"> {/* Inner container to maintain width during transition */}
+      {/* MAIN CONTENT WRAPPER */}
+      <div className="flex-1 flex relative">
+          
+          {/* SIDEBAR (InputTab) */}
+          <div 
+            className={`
+                absolute top-0 bottom-0 left-0 z-40 h-full shadow-2xl transition-all duration-300 ease-in-out
+                w-[300px] md:w-[380px]
+                ${tabOpen ? 'translate-x-0' : '-translate-x-full'}
+            `}
+          >
             <InputTab 
-              prompt={prompt}
-              setPrompt={setPrompt}
-              language={language}
-              setLanguage={setLanguage}
-              onSubmit={handleSubmit}
-              loading={loading}
+                prompt={prompt} 
+                setPrompt={setPrompt} 
+                onSubmit={handleSubmit} 
+                loading={loading}
+                language={language}
+                setLanguage={setLanguage}
             />
-        </div>
+          </div>
+
+          {/* BLACKBOARD AREA */}
+          <div 
+             className={`
+                flex-1 h-full transition-all duration-300 ease-in-out
+                ${tabOpen ? 'ml-[300px] md:ml-[380px]' : 'ml-0'}
+             `}
+          >
+            <Blackboard 
+                lessonPlan={lessonPlan} 
+                loading={loading} 
+                onClear={handleClear} 
+                language={language}
+            />
+          </div>
+
       </div>
-
-      {/* 2. Right Column: Blackboard (Flex Grow) */}
-      <main className="flex-1 h-full relative min-w-0 bg-slate-900">
-        <Blackboard 
-          lessonPlan={lessonPlan}
-          loading={loading}
-          onClear={handleClear}
-          language={language}
-        />
-      </main>
-
-      {/* Overlay for mobile when tab is open */}
-      {tabOpen && (
-        <div 
-          className="md:hidden fixed inset-0 bg-black/50 z-30 backdrop-blur-sm"
-          onClick={() => setTabOpen(false)}
-        />
-      )}
     </div>
   );
 };
