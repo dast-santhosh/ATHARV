@@ -48,7 +48,17 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
   }, [synth]);
 
   // Voice Selection: Prioritize Male voices for Atharv
-  const getInstructorVoice = () => {
+  const getInstructorVoice = (text: string) => {
+    // Check if the specific text is spoken by the "Board" (Female)
+    // The service now prefixes text with "Board: " or "Atharv: "
+    if (text.startsWith("Board:")) {
+         // Try to find a female Indian voice
+         const indianFemale = voices.find(v => (v.lang === 'hi-IN' || v.lang === 'en-IN') && !v.name.includes('Male'));
+         if (indianFemale) return indianFemale;
+         return voices.find(v => !v.name.includes('Male')) || voices[0];
+    }
+
+    // Default: Atharv (Male)
     // 1. Specific Indian Male voices (Best for Atharv)
     const indianMale = voices.find(v => (v.lang === 'hi-IN' || v.lang === 'en-IN') && v.name.includes('Male'));
     if (indianMale) return indianMale;
@@ -127,13 +137,16 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
     setActiveTooltip(null);
     resetImageTransforms();
 
-    // Safety: Strip any HTML tags that might have leaked into 'spoken'
-    const textToSpeak = stripHtml(lessonPlan.steps[index].spoken);
+    // Remove the Speaker Prefix ("Atharv: " or "Board: ") for the actual speech synthesis if desired,
+    // or keep it. Usually better to strip it so they don't say their own name.
+    const rawText = lessonPlan.steps[index].spoken;
+    // Strip "Atharv: " or "Board: " for speaking, but keep the logic to pick voice
+    const textToSpeak = stripHtml(rawText.replace(/^(Atharv|Board):\s*/i, ''));
     
     const utterance = new SpeechSynthesisUtterance(textToSpeak);
     utteranceRef.current = utterance;
     
-    const voice = getInstructorVoice();
+    const voice = getInstructorVoice(rawText);
     if (voice) {
         utterance.voice = voice;
         utterance.pitch = 1.0; 
@@ -232,8 +245,11 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
   const renderSubtitles = () => {
       if (!currentStep) return null;
       
-      // Safety: Strip HTML for subtitles too
-      const fullText = stripHtml(currentStep.spoken);
+      const rawText = currentStep.spoken;
+      const isBoardSpeaking = rawText.startsWith("Board:");
+      
+      // Strip HTML and Prefix
+      const fullText = stripHtml(rawText.replace(/^(Atharv|Board):\s*/i, ''));
       
       // Split text into smaller chunks (clauses) for shorter subtitles on mobile
       const chunks = fullText.match(/[^.!?,\n:;]+[.!?,\n:;]+['"]?|[^.!?,\n:;]+$/g) || [fullText];
@@ -258,19 +274,22 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
 
       return (
           <p className="text-sm md:text-lg font-bold leading-relaxed font-sans text-center transition-all duration-300">
-              <span className="text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] bg-black/40 px-2 py-1 rounded box-decoration-clone">
+              <span className={`text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] px-2 py-1 rounded box-decoration-clone ${isBoardSpeaking ? 'bg-pink-900/60' : 'bg-black/40'}`}>
                   {currentChunk.trim()}
               </span>
           </p>
       );
   };
 
+  const isBoardSpeaking = currentStep?.spoken.startsWith("Board:");
+
   return (
     <div className="relative w-full h-full p-2 md:p-6 flex flex-col bg-slate-900">
       <style>{`
+        /* Responsive Font Sizes using clamp() */
         .board-content h1 {
             color: #f472b6; /* Pink */
-            font-size: 3rem;
+            font-size: clamp(1.8rem, 5vw, 3rem); /* Fluid sizing */
             line-height: 1.1;
             font-weight: bold;
             margin-bottom: 0.5rem;
@@ -279,7 +298,7 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
         }
         .board-content h2 {
             color: #facc15; /* Yellow */
-            font-size: 2.25rem;
+            font-size: clamp(1.4rem, 4vw, 2.25rem); /* Fluid sizing */
             line-height: 1.2;
             font-weight: bold;
             margin-bottom: 0.5rem;
@@ -344,13 +363,12 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
             to { stroke-dashoffset: 0; opacity: 1; }
         }
         @media (max-width: 768px) {
-            .board-content h1 { font-size: 2rem; }
-            .board-content h2 { font-size: 1.5rem; }
+            /* Handled via clamp, but extra overrides if needed */
         }
       `}</style>
       
       {/* WOOD FRAME */}
-      <div className="flex-1 rounded-xl border-[16px] border-[#5d4037] shadow-2xl relative overflow-hidden bg-[#1e2923] flex flex-col box-border">
+      <div className="flex-1 rounded-xl border-[8px] md:border-[16px] border-[#5d4037] shadow-2xl relative overflow-hidden bg-[#1e2923] flex flex-col box-border">
         
         {/* Chalk Texture */}
         <div className="absolute inset-0 opacity-30 pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/black-scales.png')] z-0"></div>
@@ -371,7 +389,7 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
 
         {/* MAIN BOARD AREA */}
         <div 
-            className="flex-1 flex items-center justify-center relative z-0 p-8 overflow-hidden"
+            className="flex-1 flex items-center justify-center relative z-0 p-4 md:p-8 overflow-hidden"
             onClick={handleBoardClick} // Click Delegation
         >
             {/* Tooltip Popup (Sticky Note) */}
@@ -397,8 +415,8 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
                 </div>
             ) : !currentStep ? (
                 <div className="text-center opacity-40 select-none">
-                    <h1 className="font-chalk text-7xl text-white mb-2 rotate-[-2deg]">Class is Open!</h1>
-                    <p className="font-chalk text-2xl text-white/80">Ask a question to start.</p>
+                    <h1 className="font-chalk text-5xl md:text-7xl text-white mb-2 rotate-[-2deg]">Class is Open!</h1>
+                    <p className="font-chalk text-xl md:text-2xl text-white/80">Ask a question to start.</p>
                 </div>
             ) : (
                 <div 
@@ -407,7 +425,7 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
                     }`}
                 >
                     {isImage ? (
-                        <div className="relative group">
+                        <div className="relative group w-full h-full flex items-center justify-center">
                             {/* Image Controls */}
                             <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur rounded-full px-4 py-2 flex gap-4 text-white opacity-0 group-hover:opacity-100 transition-opacity z-20">
                                 <button onClick={() => setImgScale(s => Math.min(s + 0.2, 3))} className="hover:text-yellow-400"><ZoomIn size={20} /></button>
@@ -418,13 +436,14 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
                             <img 
                                 src={currentStep.board} 
                                 alt="Board Diagram" 
-                                className="max-h-[60vh] rounded shadow-lg border-2 border-white/20 bg-black/20 transition-transform duration-300"
+                                className="max-w-full max-h-full object-contain rounded shadow-lg border-2 border-white/20 bg-black/20 transition-transform duration-300"
                                 style={{ transform: `scale(${imgScale}) rotate(${imgRotation}deg)` }}
                             />
                         </div>
                     ) : (
                         <div 
-                            className="board-content font-chalk text-white leading-relaxed text-4xl md:text-5xl text-center w-full"
+                            // FLUID FONT SIZING APPLIED HERE
+                            className="board-content font-chalk text-white leading-relaxed text-xl sm:text-2xl md:text-4xl lg:text-5xl text-center w-full"
                             dangerouslySetInnerHTML={parsedContent!}
                         />
                     )}
@@ -435,13 +454,15 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
         {/* SUBTITLE OVERLAY */}
         {currentStep && !loading && (
             <div className={`absolute bottom-2 left-2 right-2 md:bottom-6 md:left-6 md:right-6 transition-opacity duration-500 z-10 ${isErasing ? 'opacity-0' : 'opacity-100'}`}>
-                <div className="bg-black/60 backdrop-blur-md rounded-xl p-2 md:p-4 shadow-2xl border border-white/10 flex flex-col items-center">
+                <div className={`backdrop-blur-md rounded-xl p-2 md:p-4 shadow-2xl border border-white/10 flex flex-col items-center ${isBoardSpeaking ? 'bg-pink-900/40' : 'bg-black/60'}`}>
                     <div className="flex gap-4 items-center w-full">
-                        <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-yellow-500 border-2 border-yellow-300 flex items-center justify-center shrink-0 shadow-lg animate-bounce">
-                            <span className="text-black font-black text-sm md:text-lg">I</span>
+                        <div className={`w-8 h-8 md:w-10 md:h-10 rounded-full border-2 flex items-center justify-center shrink-0 shadow-lg animate-bounce ${isBoardSpeaking ? 'bg-pink-500 border-pink-300' : 'bg-yellow-500 border-yellow-300'}`}>
+                            <span className="text-black font-black text-sm md:text-lg">{isBoardSpeaking ? 'B' : 'A'}</span>
                         </div>
                         <div className="flex-1 text-center min-w-0">
-                            <h4 className="text-yellow-400 text-[10px] font-bold uppercase tracking-widest mb-1 opacity-50">Atharv's Note</h4>
+                            <h4 className={`${isBoardSpeaking ? 'text-pink-300' : 'text-yellow-400'} text-[10px] font-bold uppercase tracking-widest mb-1 opacity-50`}>
+                                {isBoardSpeaking ? "Board's Visual" : "Atharv's Note"}
+                            </h4>
                             {renderSubtitles()}
                         </div>
                         <button onClick={handleReplay} className="text-white/30 hover:text-white transition shrink-0">
