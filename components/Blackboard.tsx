@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { LessonPlan } from '../types';
-import { RefreshCw, Pause, Play, ZoomIn, ZoomOut, RotateCw, X, User, Grid } from 'lucide-react';
+import { RefreshCw, Pause, Play, ZoomIn, ZoomOut, RotateCw, X } from 'lucide-react';
 
 interface BlackboardProps {
   lessonPlan: LessonPlan | null;
@@ -28,7 +28,6 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
   
   // Karaoke State
   const [spokenCharCount, setSpokenCharCount] = useState(0);
-  const [currentSpeaker, setCurrentSpeaker] = useState<'Atharv' | 'Board'>('Atharv');
   
   const currentStep = lessonPlan?.steps[currentStepIndex];
 
@@ -48,41 +47,23 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
     }
   }, [synth]);
 
-  // Voice Selection: STRICTLY MALE for Atharv
+  // Voice Selection: Prioritize Male Indian voices for Atharv
   const getInstructorVoice = () => {
-    // 1. Specific Indian Male voices (Best match)
+    // 1. Specific Indian Male voices
     const indianMale = voices.find(v => (v.lang === 'hi-IN' || v.lang === 'en-IN') && v.name.includes('Male'));
     if (indianMale) return indianMale;
 
-    // 2. Look for known Microsoft/Google Male Indian names
-    const knownIndianMale = voices.find(v => (v.lang === 'hi-IN' || v.lang === 'en-IN') && (v.name.includes('Prabhat') || v.name.includes('Rishi')));
-    if (knownIndianMale) return knownIndianMale;
+    // 2. Fallback: Any Hindi Voice (often better accent)
+    const hindiVoice = voices.find(v => v.lang === 'hi-IN');
+    if (hindiVoice) return hindiVoice;
 
-    // 3. Fallback: Any English Male voice (Better to sound Male and foreign than Female for "Atharv")
-    const anyMale = voices.find(v => v.name.includes('Male') && v.lang.startsWith('en'));
-    if (anyMale) return anyMale;
-
-    // 4. Fallback: Generic English India (might be female, but better accent)
+    // 3. Fallback: English India
     const indianEnglish = voices.find(v => v.lang === 'en-IN');
     if (indianEnglish) return indianEnglish;
 
-    // 5. Global Fallback
+    // 4. Global Fallback
     return voices[0];
   };
-
-  // Helper for the Board (Female) voice
-  const getBoardVoice = () => {
-      // 1. Specific Indian Female
-      const indianFemale = voices.find(v => (v.lang === 'hi-IN' || v.lang === 'en-IN') && v.name.includes('Female'));
-      if (indianFemale) return indianFemale;
-
-      // 2. Google Hindi (Usually Female)
-      const hindiVoice = voices.find(v => v.lang === 'hi-IN');
-      if (hindiVoice) return hindiVoice;
-
-      // 3. Any Female
-      return voices.find(v => v.name.includes('Female')) || voices[0];
-  }
 
   useEffect(() => {
     if (lessonPlan) {
@@ -100,6 +81,8 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
   }, [lessonPlan]);
 
   // --- SMART IMAGE PRELOADING ---
+  // This looks ahead 2 steps and triggers a hidden fetch for any images.
+  // By the time the user gets there, the image is cached.
   useEffect(() => {
     if (!lessonPlan) return;
 
@@ -110,11 +93,12 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
         // Check if it's an image step (Pollinations URL or Data URI)
         if (step.visualType === 'image' || step.board.startsWith('http') || step.board.startsWith('data:')) {
             const img = new Image();
-            img.src = step.board; 
+            img.src = step.board; // This forces the browser to download and cache the image
             console.log(`Preloading image for step ${index + 1}`);
         }
     };
 
+    // Preload the next 2 steps immediately
     preloadImage(currentStepIndex + 1);
     preloadImage(currentStepIndex + 2);
 
@@ -125,6 +109,7 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
       setImgRotation(0);
   };
 
+  // Utility to clean text for speech
   const stripHtml = (html: string) => {
       return html.replace(/<[^>]*>?/gm, '');
   };
@@ -138,35 +123,21 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
     setActiveTooltip(null);
     resetImageTransforms();
 
-    let textToSpeak = stripHtml(lessonPlan.steps[index].spoken);
+    // Safety: Strip any HTML tags that might have leaked into 'spoken'
+    const textToSpeak = stripHtml(lessonPlan.steps[index].spoken);
     
-    // Detect Speaker
-    let speaker = 'Atharv';
-    if (textToSpeak.startsWith('Board:')) {
-        speaker = 'Board';
-        textToSpeak = textToSpeak.replace('Board:', '').trim();
-    } else if (textToSpeak.startsWith('Atharv:')) {
-        speaker = 'Atharv';
-        textToSpeak = textToSpeak.replace('Atharv:', '').trim();
-    }
-    setCurrentSpeaker(speaker as 'Atharv' | 'Board');
-
     const utterance = new SpeechSynthesisUtterance(textToSpeak);
     utteranceRef.current = utterance;
     
-    // Select Voice based on Speaker
-    if (speaker === 'Board') {
-        const boardVoice = getBoardVoice();
-        if (boardVoice) utterance.voice = boardVoice;
-        utterance.pitch = 1.1; // Slightly higher/robotic for board
-    } else {
-        const instructorVoice = getInstructorVoice();
-        if (instructorVoice) utterance.voice = instructorVoice;
-        utterance.pitch = 0.9; // Slightly deeper for Male instructor
+    const voice = getInstructorVoice();
+    if (voice) {
+        utterance.voice = voice;
+        utterance.pitch = 1.0; 
     }
 
     utterance.rate = 1.0; 
 
+    // Karaoke Sync Event
     utterance.onboundary = (event) => {
         if (event.name === 'word' || event.name === 'sentence') {
             setSpokenCharCount(event.charIndex + (event.charLength || 0));
@@ -174,7 +145,7 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
     };
 
     utterance.onend = () => {
-      setSpokenCharCount(textToSpeak.length); 
+      setSpokenCharCount(textToSpeak.length); // Ensure full completion
       if (index < lessonPlan.steps.length - 1) {
         triggerNextStep(index + 1);
       } else {
@@ -212,13 +183,16 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
       }
   }
 
+  // Interaction Handlers
   const handleBoardClick = (e: React.MouseEvent<HTMLDivElement>) => {
       const target = e.target as HTMLElement;
+      // Check for data-tooltip on target or closest parent (for svg paths)
       const trigger = target.closest('[data-tooltip]');
       
       if (trigger) {
           const text = trigger.getAttribute('data-tooltip');
           if (text) {
+              // Calculate relative position within the board
               const rect = trigger.getBoundingClientRect();
               const boardRect = e.currentTarget.getBoundingClientRect();
               
@@ -230,28 +204,34 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
               return;
           }
       }
+      // Click elsewhere closes tooltip
       setActiveTooltip(null);
   };
 
+  // Determine if current content is an image
   const isImage = useMemo(() => {
       if (!currentStep) return false;
       return currentStep.visualType === 'image' || currentStep.board.startsWith('data:') || currentStep.board.startsWith('http');
   }, [currentStep]);
 
+  // Content Parser
   const parsedContent = useMemo(() => {
     if (!currentStep?.board || isImage) return null;
+
     let html = currentStep.board;
+    // Keep SVGs but sanitize other tags if needed. 
     return { __html: html };
   }, [currentStep, isImage]);
 
 
+  // Subtitle Renderer (Sentence by Sentence)
   const renderSubtitles = () => {
       if (!currentStep) return null;
       
-      let fullText = stripHtml(currentStep.spoken);
-      // Remove speaker prefix for visuals
-      fullText = fullText.replace(/^(Atharv:|Board:)/, '').trim();
-
+      // Safety: Strip HTML for subtitles too
+      const fullText = stripHtml(currentStep.spoken);
+      
+      // Split text into smaller chunks (clauses) for shorter subtitles on mobile
       const chunks = fullText.match(/[^.!?,\n:;]+[.!?,\n:;]+['"]?|[^.!?,\n:;]+$/g) || [fullText];
       
       let currentChunk = "";
@@ -265,9 +245,11 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
           accumulatedLength += chunk.length;
       }
 
+      // Fallback if finished but calculation drifts slightly
       if (!currentChunk && spokenCharCount >= fullText.length) {
           currentChunk = chunks[chunks.length - 1];
       }
+      // Fallback for beginning
       if (!currentChunk) currentChunk = chunks[0];
 
       return (
@@ -311,6 +293,7 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
             padding: 2px 6px;
             border-radius: 4px;
         }
+        /* Styles for text/element tooltips */
         .board-content span[data-tooltip], .board-content b[data-tooltip] {
             cursor: pointer;
             border-bottom: 2px dashed rgba(253, 224, 71, 0.7);
@@ -320,6 +303,8 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
             background: rgba(253, 224, 71, 0.2);
             color: #fef08a;
         }
+
+        /* Chalk SVG Styles */
         .board-content svg {
             stroke: white;
             stroke-width: 2;
@@ -338,6 +323,7 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
             animation: dash 3s linear forwards;
             pointer-events: visibleStroke;
         }
+        /* Interactive SVG Paths */
         .board-content svg [data-tooltip] {
             cursor: pointer;
             transition: stroke 0.2s, stroke-width 0.2s;
@@ -348,6 +334,7 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
             stroke-width: 4;
             filter: drop-shadow(0 0 5px #facc15);
         }
+        
         @keyframes dash {
             from { stroke-dashoffset: 1000; opacity: 0; }
             to { stroke-dashoffset: 0; opacity: 1; }
@@ -383,7 +370,7 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
             className="flex-1 flex items-center justify-center relative z-0 p-8 overflow-hidden"
             onClick={handleBoardClick} // Click Delegation
         >
-            {/* Tooltip Popup */}
+            {/* Tooltip Popup (Sticky Note) */}
             {activeTooltip && (
                 <div 
                     className="absolute z-50 bg-yellow-200 text-black p-4 shadow-[5px_5px_10px_rgba(0,0,0,0.5)] rotate-[-2deg] max-w-[200px] animate-in fade-in zoom-in duration-200"
@@ -446,15 +433,11 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
             <div className={`absolute bottom-2 left-2 right-2 md:bottom-6 md:left-6 md:right-6 transition-opacity duration-500 z-10 ${isErasing ? 'opacity-0' : 'opacity-100'}`}>
                 <div className="bg-black/60 backdrop-blur-md rounded-xl p-2 md:p-4 shadow-2xl border border-white/10 flex flex-col items-center">
                     <div className="flex gap-4 items-center w-full">
-                        {/* Speaker Avatar */}
-                        <div className={`w-8 h-8 md:w-10 md:h-10 rounded-full border-2 flex items-center justify-center shrink-0 shadow-lg animate-bounce ${currentSpeaker === 'Board' ? 'bg-cyan-600 border-cyan-300' : 'bg-yellow-500 border-yellow-300'}`}>
-                            {currentSpeaker === 'Board' ? <Grid size={18} className="text-white" /> : <User size={18} className="text-black" />}
+                        <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-yellow-500 border-2 border-yellow-300 flex items-center justify-center shrink-0 shadow-lg animate-bounce">
+                            <span className="text-black font-black text-sm md:text-lg">I</span>
                         </div>
-                        
                         <div className="flex-1 text-center min-w-0">
-                            <h4 className={`${currentSpeaker === 'Board' ? 'text-cyan-400' : 'text-yellow-400'} text-[10px] font-bold uppercase tracking-widest mb-1 opacity-50`}>
-                                {currentSpeaker === 'Board' ? "Visual Assistant" : "Atharv's Note"}
-                            </h4>
+                            <h4 className="text-yellow-400 text-[10px] font-bold uppercase tracking-widest mb-1 opacity-50">Atharv's Note</h4>
                             {renderSubtitles()}
                         </div>
                         <button onClick={handleReplay} className="text-white/30 hover:text-white transition shrink-0">
