@@ -47,35 +47,21 @@ const Blackboard: React.FC<BlackboardProps> = ({ lessonPlan, loading, onClear, l
     }
   }, [synth]);
 
-  // Voice Selection: Prioritize Male voices for Atharv
+  // Voice Selection: Prioritize FEMALE voices by default
   const getInstructorVoice = (text: string) => {
-    // Check if the specific text is spoken by the "Board" (Female)
-    // The service now prefixes text with "Board: " or "Atharv: "
-    if (text.startsWith("Board:")) {
-         // Try to find a female Indian voice
-         const indianFemale = voices.find(v => (v.lang === 'hi-IN' || v.lang === 'en-IN') && !v.name.includes('Male'));
-         if (indianFemale) return indianFemale;
-         return voices.find(v => !v.name.includes('Male')) || voices[0];
-    }
+    // 1. Try to find an Indian Female voice (hi-IN or en-IN) that is NOT marked as Male
+    const indianFemale = voices.find(v => (v.lang === 'hi-IN' || v.lang === 'en-IN') && !v.name.includes('Male'));
+    if (indianFemale) return indianFemale;
 
-    // Default: Atharv (Male)
-    // 1. Specific Indian Male voices (Best for Atharv)
-    const indianMale = voices.find(v => (v.lang === 'hi-IN' || v.lang === 'en-IN') && v.name.includes('Male'));
-    if (indianMale) return indianMale;
+    // 2. Try to find ANY Female voice (not marked as Male)
+    const anyFemale = voices.find(v => !v.name.includes('Male'));
+    if (anyFemale) return anyFemale;
 
-    // 2. Any English Male Voice (Global fallback to ensure male gender)
-    const globalMale = voices.find(v => v.name.includes('Male') && v.lang.startsWith('en'));
-    if (globalMale) return globalMale;
-
-    // 3. Fallback: Any Male voice found anywhere
-    const anyMale = voices.find(v => v.name.includes('Male'));
-    if (anyMale) return anyMale;
-
-    // 4. Fallback: English India (Might be female, but correct accent)
+    // 3. Fallback: Any Indian English voice
     const indianEnglish = voices.find(v => v.lang === 'en-IN');
     if (indianEnglish) return indianEnglish;
 
-    // 5. Global Fallback
+    // 4. Global Fallback
     return voices[0];
   };
 
